@@ -1,0 +1,26 @@
+{
+    "name": "chrome-cdp-profile-manager",
+    "version": "1.0.0",
+    "description": "Chrome Profile Manager using CDP and Playwright",
+    "main": "chrome-profile-manager.js",
+    "scripts": {
+        "example": "node example.js",
+        "test": "node test.js",
+        "start": "node example.js",
+        "capture": "node capture_traffic.js"
+    },
+    "keywords": [
+        "chrome",
+        "cdp",
+        "playwright",
+        "automation",
+        "browser",
+        "profile"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "playwright": "^1.48.0"
+    },
+    "devDependencies": {}
+}
