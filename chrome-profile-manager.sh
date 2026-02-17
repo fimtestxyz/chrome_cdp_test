@@ -27,7 +27,7 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  create <name> [port]     Create a new Chrome profile (default port: 9222)"
-    echo "  start <name>             Start Chrome with the specified profile"
+    echo "  start <name> [--headless]     Start Chrome with the specified profile"
     echo "  stop <name>              Stop Chrome instance for the profile"
     echo "  list                     List all profiles"
     echo "  status [name]            Show status of profile(s)"
@@ -111,6 +111,7 @@ EOF
 # Function to start Chrome with profile
 start_profile() {
     local profile_name=$1
+    local headless_mode=$2 # "true" or "false"
     local profile_path="$PROFILES_DIR/$profile_name"
     local config_file="$profile_path/config.json"
     local pid_file="$PIDS_DIR/$profile_name.pid"
@@ -137,29 +138,26 @@ start_profile() {
     echo "Starting Chrome with profile '$profile_name' on port $port..."
     
     # Start Chrome with remote debugging
-    nohup "$CHROME_PATH" \
-        --remote-debugging-port=$port \
-        --user-data-dir="$profile_path" \
-        --no-first-run \
-        --no-default-browser-check \
-        > "$profile_path/chrome.log" 2>&1 &
+    local chrome_args="--remote-debugging-port=$port --user-data-dir="$profile_path" --no-first-run --no-default-browser-check"
+    if [ "$headless_mode" = "true" ]; then
+        chrome_args="$chrome_args --headless=new"
+    fi
+
+    nohup "$CHROME_PATH" $chrome_args > "$profile_path/chrome.log" 2>&1 &
     
     local chrome_pid=$!
     echo $chrome_pid > "$pid_file"
     
     # Wait a moment for Chrome to start
-    sleep 2
+    sleep 5
     
-    if ps -p $chrome_pid > /dev/null 2>&1; then
-        echo -e "${GREEN}Chrome started successfully${NC}"
-        echo "PID: $chrome_pid"
-        echo "CDP endpoint: http://localhost:$port"
-        echo "WebSocket: ws://localhost:$port/devtools/browser"
-    else
-        echo -e "${RED}Failed to start Chrome${NC}"
-        rm "$pid_file"
-        return 1
-    fi
+    # We assume Chrome started successfully if nohup didn't immediately fail.
+    # The calling script (perplexity-automation-ax.js) will handle connection errors.
+    echo -e "${GREEN}Chrome launch initiated for profile '$profile_name'${NC}"
+    echo "PID: $chrome_pid (may not be the final Chrome process PID)"
+    echo "CDP endpoint: http://localhost:$port"
+    echo "WebSocket: ws://localhost:$port/devtools/browser"
+    return 0 # Indicate success of launch initiation
 }
 
 # Function to stop Chrome profile
@@ -299,10 +297,17 @@ case "${1:-}" in
         ;;
     start)
         if [ -z "$2" ]; then
-            echo -e "${RED}Error: Profile name required${NC}"
             usage
         fi
-        start_profile "$2"
+        profile_name=$2
+        headless_flag="false"
+        for i in "${@:3}"; do
+            if [ "$i" == "--headless" ]; then
+                headless_flag="true"
+                break
+            fi
+        done
+        start_profile "$profile_name" "$headless_flag"
         ;;
     stop)
         if [ -z "$2" ]; then

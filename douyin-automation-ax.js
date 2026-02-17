@@ -9,7 +9,7 @@ const ChromeProfileManager = require('./chrome-profile-manager');
 // Parse arguments
 const args = process.argv.slice(2);
 let profileName = 'profile1';
-let questionsFile = 'inputs/perplexity.yml';
+let questionsFile = 'inputs/douyin.yml';
 let axWatch = null;
 let axFiles = false;
 let axRoles = null;
@@ -51,13 +51,13 @@ for (let i = 0; i < args.length; i++) {
 
 function showHelp() {
     console.log(`
-Usage: node perplexity-automation.js [profile] [options]
+Usage: node douyin-automation-ax.js [profile] [options]
 
 Arguments:
   profile              Chrome profile name (default: profile1)
 
 Options:
-  -q, --questions FILE Questions YAML file (default: inputs/perplexity.yml)
+  -q, --questions FILE Questions YAML file (default: inputs/douyin.yml)
   --wait-between MS    Milliseconds to wait between questions (default: 3000)
   --wait-response MS   Max milliseconds to wait for response (default: 30000)
   --ax-watch N         Capture AX tree every N milliseconds
@@ -69,26 +69,26 @@ Options:
 
 YAML File Format:
   questions:
-    - "What is machine learning?"
-    - "Explain quantum computing"
-    - "Best practices for API design"
+    - "什么是机器学习?"
+    - "量子计算是什么?"
+    - "如何设计API?"
 
 Examples:
   # Basic usage
-  node perplexity-automation.js profile1
+  node douyin-automation-ax.js profile1
 
   # Custom questions file
-  node perplexity-automation.js profile1 --questions my-questions.yml
+  node douyin-automation-ax.js profile1 --questions my-questions.yml
 
   # Adjust timing
-  node perplexity-automation.js profile1 --wait-between 5000 --wait-response 60000
+  node douyin-automation-ax.js profile1 --wait-between 5000 --wait-response 60000
 
   # Save AX snapshots
-  node perplexity-automation.js profile1 --ax-files --ax-cdp
+  node douyin-automation-ax.js profile1 --ax-files --ax-cdp
 `);
 }
 
-const url = 'https://www.perplexity.ai';
+const url = 'https://www.douyin.com/aisearch';
 
 // Helper to slugify URL
 function slugify(urlStr) {
@@ -115,10 +115,10 @@ function getTimestamp() {
 
 const slug = slugify(url);
 const timeStr = getTimestamp();
-const filename = `perplexity_${timeStr}.jsonl`;
+const filename = `douyin_${timeStr}.jsonl`;
 const outputDir = path.join(__dirname, 'payload');
 const outputPath = path.join(outputDir, filename);
-const axDir = axFiles ? path.join(outputDir, 'ax_snapshots', `perplexity_${timeStr}`) : null;
+const axDir = axFiles ? path.join(outputDir, 'ax_snapshots', `douyin_${timeStr}`) : null;
 
 // Ensure directories
 if (!fs.existsSync(outputDir)) {
@@ -250,175 +250,106 @@ async function captureAxTree(page, stream, label = 'initial') {
         tree = filterAxTreeByRoles(tree, axRoles);
     }
 
-    const data = {
-        type: 'accessibility',
-        method: usedMethod,
-        snapshot_id: axSnapshotCount,
-        question_id: questionCount,
+    const entry = {
+        type: 'ax_snapshot',
         label: label,
         timestamp: timestamp,
+        method: usedMethod,
         tree: tree
     };
 
-    stream.write(JSON.stringify(data) + '\n');
+    stream.write(JSON.stringify(entry) + '\n');
 
     if (axFiles && axDir) {
-        const axFilename = `ax_${axSnapshotCount}_q${questionCount}_${label}_${Date.now()}.json`;
+        const axFilename = `${label}_${axSnapshotCount}.json`;
         const axPath = path.join(axDir, axFilename);
-        fs.writeFileSync(axPath, JSON.stringify(data, null, 2));
+        fs.writeFileSync(axPath, JSON.stringify({
+            label,
+            timestamp,
+            method: usedMethod,
+            tree
+        }, null, 2));
     }
 
-    console.log(`  ✓ Captured AX tree #${axSnapshotCount} (${countNodes(tree)} nodes)`);
+    console.log(`  ✓ AX snapshot #${axSnapshotCount} (${label}) via ${usedMethod}`);
 }
 
-// Count nodes in AX tree
-function countNodes(node) {
-    if (!node) return 0;
-    if (Array.isArray(node)) return node.reduce((sum, n) => sum + countNodes(n), 0);
-    let count = 1;
-    if (node.children) {
-        count += node.children.reduce((sum, child) => sum + countNodes(child), 0);
-    }
-    return count;
-}
-
-// Wait for Perplexity response to complete
-async function waitForResponseComplete(page, timeout = 30000) {
+// Wait for response to complete
+async function waitForResponseComplete(page, maxWait) {
     const startTime = Date.now();
-
-    console.log('  ⏳ Waiting for response...');
-
+    
     try {
-        // Wait a minimum of 2 seconds for response to start
+        // Wait a bit for the response to start generating
         await new Promise(r => setTimeout(r, 2000));
 
-        // Use MutationObserver to detect when answer content changes
-        const answerComplete = await page.evaluate((maxTimeout) => {
-            return new Promise((resolve) => {
-                // Try to find answer container
-                const containerSelectors = [
-                    '[data-testid="answers"]',
-                    '[data-testid*="answer"]',
-                    'div.results',
-                    'main',
-                    'div[role="main"]',
-                    'body'
-                ];
+        // Poll for response completion indicators
+        while (Date.now() - startTime < maxWait) {
+            const isComplete = await page.evaluate(() => {
+                // Check for common Douyin AI search response indicators
+                // Look for response container
+                const responseContainer = document.querySelector('[class*="answer"]') || 
+                                         document.querySelector('[class*="response"]') ||
+                                         document.querySelector('[class*="result"]');
+                
+                if (!responseContainer) return false;
 
-                let container = null;
-                for (const sel of containerSelectors) {
-                    container = document.querySelector(sel);
-                    if (container) break;
-                }
-
-                if (!container) {
-                    resolve(false);
-                    return;
-                }
-
-                let lastText = container.innerText || '';
-                let stableCount = 0;
-                let changeDetected = false;
-
-                const observer = new MutationObserver(() => {
-                    const currentText = container.innerText || '';
-
-                    // Detect if content has changed
-                    if (currentText !== lastText) {
-                        changeDetected = true;
-                        stableCount = 0;
-                        lastText = currentText;
-                    } else if (changeDetected) {
-                        // Content has stopped changing
-                        stableCount++;
-                        if (stableCount >= 5) {
-                            // Stable for 5 checks (~2.5 seconds)
-                            observer.disconnect();
-                            resolve(true);
-                        }
-                    }
-                });
-
-                observer.observe(container, {
-                    childList: true,
-                    subtree: true,
-                    characterData: true
-                });
-
-                // Check every 500ms
-                const checkInterval = setInterval(() => {
-                    const currentText = container.innerText || '';
-                    if (currentText !== lastText) {
-                        changeDetected = true;
-                        stableCount = 0;
-                        lastText = currentText;
-                    } else if (changeDetected) {
-                        stableCount++;
-                        if (stableCount >= 5) {
-                            clearInterval(checkInterval);
-                            observer.disconnect();
-                            resolve(true);
-                        }
-                    }
-                }, 500);
-
-                // Timeout
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    observer.disconnect();
-                    resolve(changeDetected); // Return true if any change was detected
-                }, maxTimeout);
+                // Check if there's a loading indicator
+                const loading = document.querySelector('[class*="loading"]') ||
+                               document.querySelector('[class*="generating"]') ||
+                               document.querySelector('.spinner');
+                
+                // If no loading indicator and response exists, assume complete
+                return !loading && responseContainer.textContent.length > 50;
             });
-        }, timeout - 2000);
 
-        if (answerComplete) {
-            console.log('  ✓ Response complete');
-            return true;
-        } else {
-            console.log('  ⚠ Timeout or no response detected');
-            return false;
+            if (isComplete) {
+                console.log('  ✓ Response appears complete');
+                return true;
+            }
+
+            await new Promise(r => setTimeout(r, 500));
         }
+
+        console.log('  ⚠ Response timeout - continuing anyway');
+        return false;
     } catch (e) {
-        console.error('  ✗ Error waiting for response:', e.message);
+        console.error(`  ✗ Error waiting for response: ${e.message}`);
         return false;
     }
 }
 
-// Ask a question on Perplexity
+// Ask a question
 async function askQuestion(page, question, stream) {
     questionCount++;
-
-    console.log(`\n${'─'.repeat(60)}`);
-    console.log(`Question ${questionCount}: ${question}`);
-    console.log('─'.repeat(60));
-
-    // Log the question
-    const questionData = {
-        type: 'question',
-        question_id: questionCount,
-        question: question,
-        timestamp: new Date().toISOString()
-    };
-    stream.write(JSON.stringify(questionData) + '\n');
-
+    
     try {
-        // Find the input field - Perplexity uses contenteditable <p> inside div#ask-input
-        console.log('  → Finding input field...');
-        const inputSelectors = [
-            'div#ask-input > p',
-            'div[aria-placeholder*="Ask"]',
-            'div#ask-input p[contenteditable]',
-            '[contenteditable][placeholder*="Ask"]',
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`Question ${questionCount}: ${question}`);
+        console.log('─'.repeat(60));
 
+        // Wait a moment to ensure page is stable
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Multiple selector strategies for the Douyin AI search input
+        const inputSelectors = [
+            '#input_ai_search',
+            'div#input_ai_search',
+            '[contenteditable="true"]#input_ai_search',
+            'div.input_blVmyq',
+            '[contenteditable="true"][data-placeholder*="AI"]',
+            '[contenteditable="true"][data-placeholder*="答案"]'
         ];
 
+        console.log('  → Finding input field...');
         let inputElement = null;
         let usedSelector = null;
 
         for (const selector of inputSelectors) {
             try {
+                console.log(`     Trying: ${selector}...`);
                 inputElement = await page.waitForSelector(selector, {
-                    timeout: 5000
+                    timeout: 5000,
+                    state: 'visible'
                 });
                 if (inputElement) {
                     usedSelector = selector;
@@ -426,61 +357,53 @@ async function askQuestion(page, question, stream) {
                     break;
                 }
             } catch (e) {
+                console.log(`     ✗ Not found: ${selector}`);
                 continue;
             }
         }
 
         if (!inputElement) {
-            throw new Error('Could not find input field');
+            // Last resort: check if ANY contenteditable exists
+            console.log('  → Checking for any contenteditable element...');
+            try {
+                const anyEditable = await page.$('[contenteditable="true"]');
+                if (anyEditable) {
+                    console.log('  ⚠ Found a contenteditable but it did not match selectors');
+                    inputElement = anyEditable;
+                    usedSelector = '[contenteditable="true"]';
+                } else {
+                    throw new Error('Could not find input field with any known selector');
+                }
+            } catch (e) {
+                throw new Error('Could not find input field with any known selector');
+            }
         }
 
         // Clear any existing text
-        await page.evaluate((args) => {
-            const el = document.querySelector(args.selector);
+        console.log('  → Clearing input...');
+        await page.evaluate((selector) => {
+            const el = document.querySelector(selector);
             if (el) {
-                if (el.isContentEditable) {
-                    el.textContent = '';
-                } else if ('value' in el) {
-                    el.value = '';
-                }
+                // Clear all possible text content
+                el.textContent = '';
+                el.innerText = '';
+                el.innerHTML = '';
+                // Remove focus and refocus to reset state
+                el.blur();
             }
-        }, {
-            selector: usedSelector
-        });
+        }, usedSelector);
+        
+        await new Promise(r => setTimeout(r, 200));
 
+        // Focus and type the question
+        console.log('  → Focusing and typing question...');
+        await inputElement.click();
         await new Promise(r => setTimeout(r, 300));
-
-        // Type the question using the appropriate method
-        console.log('  → Typing question...');
-        await page.evaluate((args) => {
-            const el = document.querySelector(args.selector);
-            if (!el) return;
-
-            // For contenteditable elements
-            if (el.isContentEditable) {
-                el.focus();
-                el.textContent = args.text;
-                el.dispatchEvent(new InputEvent('input', {
-                    bubbles: true,
-                    cancelable: true,
-                    data: args.text,
-                    inputType: 'insertText'
-                }));
-            }
-            // For textarea/input elements
-            else if ('value' in el) {
-                el.focus();
-                el.value = args.text;
-                el.dispatchEvent(new Event('input', {
-                    bubbles: true
-                }));
-            }
-        }, {
-            selector: usedSelector,
-            text: question
+        await page.keyboard.type(question, {
+            delay: 80
         });
 
-        // Wait a moment for input to register
+        // Wait a bit for any autocomplete to settle
         await new Promise(r => setTimeout(r, 500));
 
         // Capture AX tree before submit
@@ -490,10 +413,12 @@ async function askQuestion(page, question, stream) {
         // Find and click submit button
         console.log('  → Finding submit button...');
         const buttonSelectors = [
-            'button[data-testid="submit-button"]',
-            'button[aria-label*="Submit"]',
+            'button[class*="search"]',
+            'button[class*="submit"]',
             'button[type="submit"]',
-            'div#ask-input button'
+            '[class*="search"] button',
+            'button[aria-label*="搜索"]',
+            'button[aria-label*="提交"]'
         ];
 
         let submitButton = null;
@@ -544,16 +469,16 @@ async function askQuestion(page, question, stream) {
             const responseText = await page.evaluate(() => {
                 // Try multiple selectors for the answer container
                 const selectors = [
-                    '[data-testid="answers"]',
-                    '[data-testid*="answer"]',
-                    'div.results',
+                    '[class*="answer"]',
+                    '[class*="response"]',
+                    '[class*="result"]',
                     'main',
-                    'div[role="main"]'
+                    '[role="main"]'
                 ];
 
                 for (const sel of selectors) {
                     const el = document.querySelector(sel);
-                    if (el && el.innerText) {
+                    if (el && el.innerText && el.innerText.length > 50) {
                         return el.innerText;
                     }
                 }
@@ -689,13 +614,49 @@ async function main() {
             }
         });
 
-        // Navigate and wait for page load
-        await page.goto(url, {
-            waitUntil: 'networkidle',
-            timeout: 90000 // Increased timeout to 90 seconds
-        });
+        // Navigate with more lenient strategy for Douyin
+        console.log('Attempting navigation with domcontentloaded strategy...');
+        try {
+            await page.goto(url, {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            });
+            console.log('✓ Page navigation complete (domcontentloaded)');
+        } catch (e) {
+            console.log('⚠ Navigation with domcontentloaded failed, trying load strategy...');
+            await page.goto(url, {
+                waitUntil: 'load',
+                timeout: 60000
+            });
+            console.log('✓ Page navigation complete (load)');
+        }
+
+        // Wait for page to settle
+        console.log('Waiting for page to settle...');
+        await new Promise(r => setTimeout(r, 5000));
 
         console.log('✓ Page loaded\n');
+
+        // Wait for the search input to be available
+        console.log('Waiting for search interface to load...');
+        try {
+            await page.waitForSelector('#input_ai_search', {
+                timeout: 30000,
+                state: 'visible'
+            });
+            console.log('✓ Search interface ready (#input_ai_search found)\n');
+        } catch (e) {
+            console.log('⚠ #input_ai_search not found, trying alternative selectors...');
+            try {
+                await page.waitForSelector('[contenteditable="true"]', {
+                    timeout: 10000,
+                    state: 'visible'
+                });
+                console.log('✓ Found contenteditable element\n');
+            } catch (e2) {
+                console.log('⚠ Search interface not detected, continuing anyway...\n');
+            }
+        }
 
         // Capture initial state
         console.log('Capturing initial page state...');

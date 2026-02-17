@@ -6,7 +6,6 @@ const path = require('path');
 const yaml = require('js-yaml');
 const ChromeProfileManager = require('./chrome-profile-manager');
 
-// Parse arguments
 const args = process.argv.slice(2);
 let profileName = 'profile1';
 let questionsFile = 'inputs/perplexity.yml';
@@ -14,11 +13,10 @@ let axWatch = null;
 let axFiles = false;
 let axRoles = null;
 let axMethod = 'playwright';
-let waitBetweenQuestions = 3000; // Default 3 seconds between questions
-let waitForResponse = 30000; // Default 30 seconds max wait for response
+let waitBetweenQuestions = 3000;
+let waitForResponse = 30000;
 let headless = false;
 
-// Simple argument parser
 for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
         const flag = args[i];
@@ -51,7 +49,7 @@ for (let i = 0; i < args.length; i++) {
 
 function showHelp() {
     console.log(`
-Usage: node perplexity-automation.js [profile] [options]
+Usage: node grok-automation-ax.js [profile] [options]
 
 Arguments:
   profile              Chrome profile name (default: profile1)
@@ -74,23 +72,15 @@ YAML File Format:
     - "Best practices for API design"
 
 Examples:
-  # Basic usage
-  node perplexity-automation.js profile1
-
-  # Custom questions file
-  node perplexity-automation.js profile1 --questions my-questions.yml
-
-  # Adjust timing
-  node perplexity-automation.js profile1 --wait-between 5000 --wait-response 60000
-
-  # Save AX snapshots
-  node perplexity-automation.js profile1 --ax-files --ax-cdp
+  node grok-automation-ax.js profile1
+  node grok-automation-ax.js profile1 --questions my-questions.yml
+  node grok-automation-ax.js profile1 --wait-between 5000 --wait-response 60000
+  node grok-automation-ax.js profile1 --ax-files --ax-cdp
 `);
 }
 
-const url = 'https://www.perplexity.ai';
+const url = 'https://grok.com';
 
-// Helper to slugify URL
 function slugify(urlStr) {
     try {
         const u = new URL(urlStr);
@@ -100,7 +90,6 @@ function slugify(urlStr) {
     }
 }
 
-// Timestamp format: %Y%m%d_%H%M%S
 function getTimestamp() {
     const now = new Date();
     const pad = n => n.toString().padStart(2, '0');
@@ -115,12 +104,11 @@ function getTimestamp() {
 
 const slug = slugify(url);
 const timeStr = getTimestamp();
-const filename = `perplexity_${timeStr}.jsonl`;
+const filename = `grok_${timeStr}.jsonl`;
 const outputDir = path.join(__dirname, 'payload');
 const outputPath = path.join(outputDir, filename);
-const axDir = axFiles ? path.join(outputDir, 'ax_snapshots', `perplexity_${timeStr}`) : null;
+const axDir = axFiles ? path.join(outputDir, 'ax_snapshots', `grok_${timeStr}`) : null;
 
-// Ensure directories
 if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir);
 }
@@ -134,7 +122,6 @@ const manager = new ChromeProfileManager();
 let axSnapshotCount = 0;
 let questionCount = 0;
 
-// Load questions from YAML
 function loadQuestions(filepath) {
     try {
         const fileContent = fs.readFileSync(filepath, 'utf8');
@@ -169,11 +156,10 @@ async function startProfile(name, isHeadless) {
         console.log('Waiting for Chrome to initialize...');
         await new Promise(r => setTimeout(r, 3000));
     } catch (e) {
-        console.error("Error starting profile (might already be running):", e.message);
+        console.error('Error starting profile (might already be running):', e.message);
     }
 }
 
-// Filter AX tree by roles
 function filterAxTreeByRoles(node, roles) {
     if (!node) return null;
 
@@ -195,7 +181,6 @@ function filterAxTreeByRoles(node, roles) {
     return filtered;
 }
 
-// Capture AX tree using Playwright
 async function captureAxTreePlaywright(page) {
     try {
         if (!page.accessibility || typeof page.accessibility.snapshot !== 'function') {
@@ -208,7 +193,6 @@ async function captureAxTreePlaywright(page) {
     }
 }
 
-// Capture AX tree using raw CDP
 async function captureAxTreeCDP(page) {
     try {
         const client = await page.context().newCDPSession(page);
@@ -223,7 +207,6 @@ async function captureAxTreeCDP(page) {
     }
 }
 
-// Main AX tree capture function
 async function captureAxTree(page, stream, label = 'initial') {
     axSnapshotCount++;
     const timestamp = new Date().toISOString();
@@ -271,7 +254,6 @@ async function captureAxTree(page, stream, label = 'initial') {
     console.log(`  ✓ Captured AX tree #${axSnapshotCount} (${countNodes(tree)} nodes)`);
 }
 
-// Count nodes in AX tree
 function countNodes(node) {
     if (!node) return 0;
     if (Array.isArray(node)) return node.reduce((sum, n) => sum + countNodes(n), 0);
@@ -282,26 +264,21 @@ function countNodes(node) {
     return count;
 }
 
-// Wait for Perplexity response to complete
 async function waitForResponseComplete(page, timeout = 30000) {
-    const startTime = Date.now();
-
     console.log('  ⏳ Waiting for response...');
 
     try {
-        // Wait a minimum of 2 seconds for response to start
         await new Promise(r => setTimeout(r, 2000));
 
-        // Use MutationObserver to detect when answer content changes
         const answerComplete = await page.evaluate((maxTimeout) => {
             return new Promise((resolve) => {
-                // Try to find answer container
                 const containerSelectors = [
-                    '[data-testid="answers"]',
-                    '[data-testid*="answer"]',
-                    'div.results',
                     'main',
                     'div[role="main"]',
+                    '[data-testid*="response"]',
+                    '[data-testid*="answer"]',
+                    '.message',
+                    'article',
                     'body'
                 ];
 
@@ -322,17 +299,13 @@ async function waitForResponseComplete(page, timeout = 30000) {
 
                 const observer = new MutationObserver(() => {
                     const currentText = container.innerText || '';
-
-                    // Detect if content has changed
                     if (currentText !== lastText) {
                         changeDetected = true;
                         stableCount = 0;
                         lastText = currentText;
                     } else if (changeDetected) {
-                        // Content has stopped changing
                         stableCount++;
                         if (stableCount >= 5) {
-                            // Stable for 5 checks (~2.5 seconds)
                             observer.disconnect();
                             resolve(true);
                         }
@@ -345,7 +318,6 @@ async function waitForResponseComplete(page, timeout = 30000) {
                     characterData: true
                 });
 
-                // Check every 500ms
                 const checkInterval = setInterval(() => {
                     const currentText = container.innerText || '';
                     if (currentText !== lastText) {
@@ -362,11 +334,10 @@ async function waitForResponseComplete(page, timeout = 30000) {
                     }
                 }, 500);
 
-                // Timeout
                 setTimeout(() => {
                     clearInterval(checkInterval);
                     observer.disconnect();
-                    resolve(changeDetected); // Return true if any change was detected
+                    resolve(changeDetected);
                 }, maxTimeout);
             });
         }, timeout - 2000);
@@ -384,7 +355,6 @@ async function waitForResponseComplete(page, timeout = 30000) {
     }
 }
 
-// Ask a question on Perplexity
 async function askQuestion(page, question, stream) {
     questionCount++;
 
@@ -392,7 +362,6 @@ async function askQuestion(page, question, stream) {
     console.log(`Question ${questionCount}: ${question}`);
     console.log('─'.repeat(60));
 
-    // Log the question
     const questionData = {
         type: 'question',
         question_id: questionCount,
@@ -402,14 +371,17 @@ async function askQuestion(page, question, stream) {
     stream.write(JSON.stringify(questionData) + '\n');
 
     try {
-        // Find the input field - Perplexity uses contenteditable <p> inside div#ask-input
         console.log('  → Finding input field...');
         const inputSelectors = [
-            'div#ask-input > p',
-            'div[aria-placeholder*="Ask"]',
-            'div#ask-input p[contenteditable]',
-            '[contenteditable][placeholder*="Ask"]',
-
+            'textarea',
+            'textarea[placeholder*="Ask"]',
+            'textarea[aria-label*="Ask"]',
+            'textarea[aria-label*="Message"]',
+            '[contenteditable="true"]',
+            'div[contenteditable="true"]',
+            'input[type="text"]',
+            'input[placeholder*="Ask"]',
+            'input[aria-label*="Ask"]'
         ];
 
         let inputElement = null;
@@ -434,7 +406,6 @@ async function askQuestion(page, question, stream) {
             throw new Error('Could not find input field');
         }
 
-        // Clear any existing text
         await page.evaluate((args) => {
             const el = document.querySelector(args.selector);
             if (el) {
@@ -450,13 +421,11 @@ async function askQuestion(page, question, stream) {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // Type the question using the appropriate method
         console.log('  → Typing question...');
         await page.evaluate((args) => {
             const el = document.querySelector(args.selector);
             if (!el) return;
 
-            // For contenteditable elements
             if (el.isContentEditable) {
                 el.focus();
                 el.textContent = args.text;
@@ -466,9 +435,7 @@ async function askQuestion(page, question, stream) {
                     data: args.text,
                     inputType: 'insertText'
                 }));
-            }
-            // For textarea/input elements
-            else if ('value' in el) {
+            } else if ('value' in el) {
                 el.focus();
                 el.value = args.text;
                 el.dispatchEvent(new Event('input', {
@@ -480,20 +447,19 @@ async function askQuestion(page, question, stream) {
             text: question
         });
 
-        // Wait a moment for input to register
         await new Promise(r => setTimeout(r, 500));
 
-        // Capture AX tree before submit
         console.log('  → Capturing pre-submit state...');
         await captureAxTree(page, stream, `q${questionCount}_before_submit`);
 
-        // Find and click submit button
         console.log('  → Finding submit button...');
         const buttonSelectors = [
-            'button[data-testid="submit-button"]',
-            'button[aria-label*="Submit"]',
             'button[type="submit"]',
-            'div#ask-input button'
+            'button[aria-label*="Send"]',
+            'button[aria-label*="Submit"]',
+            'button[aria-label*="Ask"]',
+            'button[data-testid*="send"]',
+            'button[data-testid*="submit"]'
         ];
 
         let submitButton = null;
@@ -516,7 +482,6 @@ async function askQuestion(page, question, stream) {
         }
 
         if (!submitButton) {
-            // Fallback: try pressing Enter
             console.log('  → Submit button not found, trying Enter key...');
             await page.evaluate((args) => {
                 const el = document.querySelector(args.selector);
@@ -526,29 +491,25 @@ async function askQuestion(page, question, stream) {
             });
             await page.keyboard.press('Enter');
         } else {
-            // Click the button
             console.log('  → Clicking submit button...');
             await submitButton.click();
         }
 
-        // Wait for response to start and complete
         const responseComplete = await waitForResponseComplete(page, waitForResponse);
 
         if (responseComplete) {
-            // Capture AX tree after response
             console.log('  → Capturing response state...');
             await captureAxTree(page, stream, `q${questionCount}_after_response`);
 
-            // Extract the response text
             console.log('  → Extracting response...');
             const responseText = await page.evaluate(() => {
-                // Try multiple selectors for the answer container
                 const selectors = [
-                    '[data-testid="answers"]',
+                    '[data-testid*="response"]',
                     '[data-testid*="answer"]',
-                    'div.results',
                     'main',
-                    'div[role="main"]'
+                    'div[role="main"]',
+                    '.message',
+                    'article'
                 ];
 
                 for (const sel of selectors) {
@@ -558,11 +519,9 @@ async function askQuestion(page, question, stream) {
                     }
                 }
 
-                // Fallback: get the whole page
                 return document.body.innerText;
             });
 
-            // Log the response
             const responseData = {
                 type: 'response',
                 question_id: questionCount,
@@ -596,7 +555,6 @@ async function askQuestion(page, question, stream) {
 }
 
 async function main() {
-    // Load questions
     console.log(`\nLoading questions from: ${questionsFile}`);
     const questions = loadQuestions(questionsFile);
     console.log(`✓ Loaded ${questions.length} question(s)\n`);
@@ -612,12 +570,10 @@ async function main() {
     if (axFiles) console.log(`AX Files: ${axDir}`);
     console.log(`${'='.repeat(60)}\n`);
 
-    // Create a write stream
     const stream = fs.createWriteStream(outputPath, {
         flags: 'a'
     });
 
-    // Handle cleanup
     const cleanup = async () => {
         console.log('\n\nStopping automation...');
         stream.end();
@@ -645,7 +601,6 @@ async function main() {
 
         console.log(`Navigating to ${url}...`);
 
-        // Enable request/response interception
         page.on('request', request => {
             try {
                 const data = {
@@ -656,9 +611,7 @@ async function main() {
                     headers: request.headers()
                 };
                 stream.write(JSON.stringify(data) + '\n');
-            } catch (e) {
-                // Ignore
-            }
+            } catch (e) {}
         });
 
         page.on('response', async response => {
@@ -667,8 +620,7 @@ async function main() {
                 const resourceType = response.request().resourceType();
                 const contentType = response.headers()['content-type'] || '';
 
-                if (['xhr', 'fetch'].includes(resourceType) ||
-                    contentType.includes('json')) {
+                if (['xhr', 'fetch'].includes(resourceType) || contentType.includes('json')) {
                     try {
                         body = await response.text();
                     } catch (e) {
@@ -684,33 +636,25 @@ async function main() {
                     body: body
                 };
                 stream.write(JSON.stringify(data) + '\n');
-            } catch (e) {
-                // Ignore
-            }
+            } catch (e) {}
         });
 
-        // Navigate and wait for page load
         await page.goto(url, {
             waitUntil: 'networkidle',
-            timeout: 90000 // Increased timeout to 90 seconds
+            timeout: 90000
         });
 
         console.log('✓ Page loaded\n');
 
-        // Capture initial state
         console.log('Capturing initial page state...');
         await captureAxTree(page, stream, 'initial_load');
 
-        // Wait a bit for any animations to settle
         await new Promise(r => setTimeout(r, 2000));
 
-        // Process each question
         for (let i = 0; i < questions.length; i++) {
             const question = questions[i];
+            await askQuestion(page, question, stream);
 
-            const success = await askQuestion(page, question, stream);
-
-            // Wait between questions (except after the last one)
             if (i < questions.length - 1) {
                 console.log(`\n  ⏸  Waiting ${waitBetweenQuestions}ms before next question...`);
                 await new Promise(r => setTimeout(r, waitBetweenQuestions));
@@ -721,9 +665,7 @@ async function main() {
         console.log(`All ${questions.length} questions completed!`);
         console.log('='.repeat(60));
 
-        // Final cleanup
         await cleanup();
-
     } catch (err) {
         console.error('\n✗ Error:', err);
         stream.end();

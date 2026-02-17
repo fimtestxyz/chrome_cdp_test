@@ -692,7 +692,7 @@ async function main() {
         // Navigate and wait for page load
         await page.goto(url, {
             waitUntil: 'networkidle',
-            timeout: 90000 // Increased timeout to 90 seconds
+            timeout: 60000
         });
 
         console.log('✓ Page loaded\n');
