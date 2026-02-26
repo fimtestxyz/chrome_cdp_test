@@ -16,6 +16,7 @@ let axMethod = 'playwright';
 let waitBetweenQuestions = 3000;
 let waitForResponse = 30000;
 let headless = false;
+let topic = 'latest AI agent automation development for past 1 week';
 
 for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
@@ -34,6 +35,8 @@ for (let i = 0; i < args.length; i++) {
             waitBetweenQuestions = parseInt(args[++i]) || 3000;
         } else if (flag === '--wait-response') {
             waitForResponse = parseInt(args[++i]) || 30000;
+        } else if (flag === '--topic') {
+            topic = args[++i] || topic;
         } else if (flag === '--headless') {
             headless = true;
         } else if (flag === '--help' || flag === '-h') {
@@ -58,6 +61,7 @@ Options:
   -q, --questions FILE Questions YAML file (default: inputs/gemini.yml)
   --wait-between MS    Milliseconds to wait between questions (default: 3000)
   --wait-response MS   Max milliseconds to wait for response (default: 30000)
+  --topic TEXT         Replace {topic} in questions (default: latest AI agent automation development for past 1 week)
   --ax-watch N         Capture AX tree every N milliseconds
   --ax-files           Save AX snapshots to separate files
   --ax-roles R         Filter AX tree by roles (comma-separated)
@@ -131,7 +135,10 @@ function loadQuestions(filepath) {
             throw new Error('YAML file must contain a "questions" array');
         }
 
-        return data.questions;
+        return data.questions.map(question => {
+            if (typeof question !== 'string') return question;
+            return question.replace(/\{topic\}/g, topic);
+        });
     } catch (e) {
         console.error(`Error loading questions file: ${e.message}`);
         console.log('\nExpected format:');
