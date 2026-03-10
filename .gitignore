@@ -5,3 +5,5 @@ node_modules/
 payload/
 chrome-profiles/
 .pids/
+
+marinetraffic/*
