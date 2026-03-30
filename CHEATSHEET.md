@@ -227,3 +227,21 @@ await manager.execute('profile1', async ({ page }) => {
   await page.goto('https://example.com');
 });
 ```
+
+
+✦ I have created x-ax.js, which adapts the architecture of gemini-automation-ax.js to automate search operations on X
+  (Twitter). The script manages Chrome profiles, navigates to https://x.com/home, performs targeted searches, and
+  captures accessibility (AX) tree snapshots throughout the process for diagnostic and analysis purposes.
+
+  Key Features of x-ax.js:
+   - Search Automation: Targets the X search input ([data-testid="SearchBox_Search_Input"]) and handles result loading.
+   - AX Tree Integration: Captures snapshots before and after search execution, consistent with the existing automation
+     patterns.
+   - Flexible Targets: Supports loading multiple search terms from a YAML file (default: inputs/x.yml) or a single term
+     via the --target CLI flag.
+   - Detailed Logging: Outputs session data, including AX trees and search result summaries, to JSONL files in the
+     payload/ directory.
+
+  You can run the script using:
+
+   1 node x-ax.js profile1 --target "AI automation"
