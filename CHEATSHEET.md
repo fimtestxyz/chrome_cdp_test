@@ -1,4 +1,4 @@
-# Chrome Profile Manager - Quick Reference
+#node x-ax.js profile1 --target "AI agents" --scroll-n 5 --scroll-m 2 Chrome Profile Manager - Quick Reference
 
 ## Shell Commands
 
@@ -244,4 +244,5 @@ await manager.execute('profile1', async ({ page }) => {
 
   You can run the script using:
 
-   1 node x-ax.js profile1 --target "AI automation"
+   node x-ax.js profile1 --target "AI automation"
+   node x-ax.js profile1 --target "AI agents" --scroll-n 5 --scroll-m 2

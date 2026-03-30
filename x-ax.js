@@ -17,6 +17,8 @@ let waitBetweenTargets = 3000;
 let waitForResults = 30000;
 let headless = false;
 let defaultTarget = 'AI agents automation';
+let scrollN = 3;
+let scrollM = 2;
 
 for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
@@ -38,6 +40,10 @@ for (let i = 0; i < args.length; i++) {
             waitBetweenTargets = parseInt(args[++i]) || 3000;
         } else if (flag === '--wait-results') {
             waitForResults = parseInt(args[++i]) || 30000;
+        } else if (flag === '--scroll-n') {
+            scrollN = parseInt(args[++i]) || 3;
+        } else if (flag === '--scroll-m') {
+            scrollM = parseInt(args[++i]) || 2;
         } else if (flag === '--headless') {
             headless = true;
         } else if (flag === '--help' || flag === '-h') {
@@ -63,6 +69,8 @@ Options:
   --target TEXT        Single search target (overrides --targets file)
   --wait-between MS    Milliseconds to wait between targets (default: 3000)
   --wait-results MS    Max milliseconds to wait for results (default: 30000)
+  --scroll-n N         Number of times to scroll down (default: 3)
+  --scroll-m M         Capture AX tree every M scrolls (default: 2)
   --ax-watch N         Capture AX tree every N milliseconds
   --ax-files           Save AX snapshots to separate files
   --ax-roles R         Filter AX tree by roles (comma-separated)
@@ -282,6 +290,21 @@ async function waitForResultsLoaded(page, timeout = 30000) {
     }
 }
 
+async function scrollPage(page, stream, n, m, labelPrefix) {
+    console.log(`  → Scrolling down ${n} times (capture every ${m})...`);
+    for (let i = 1; i <= n; i++) {
+        await page.evaluate(() => {
+            window.scrollBy(0, window.innerHeight);
+        });
+        await new Promise(r => setTimeout(r, 1500)); // Wait for content to load
+
+        if (i % m === 0) {
+            console.log(`  → Capturing AX state at scroll ${i}...`);
+            await captureAxTree(page, stream, `${labelPrefix}_scroll_${i}`);
+        }
+    }
+}
+
 async function performSearch(page, target, stream) {
     searchCount++;
 
@@ -318,8 +341,13 @@ async function performSearch(page, target, stream) {
         const resultsLoaded = await waitForResultsLoaded(page, waitForResults);
 
         if (resultsLoaded) {
-            console.log('  → Capturing results state...');
+            console.log('  → Capturing initial results state...');
             await captureAxTree(page, stream, `s${searchCount}_after_results`);
+
+            // Perform scrolling
+            if (scrollN > 0) {
+                await scrollPage(page, stream, scrollN, scrollM, `s${searchCount}`);
+            }
 
             console.log('  → Extracting top result text...');
             const resultsText = await page.evaluate(() => {
